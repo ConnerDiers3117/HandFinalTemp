@@ -6,7 +6,7 @@ const app = express();
 const PORT = 3000;
 
 // 👇 CHANGE THIS TO YOUR ARDUINO PORT
-const SERIAL_PORT = 'COM3';   // Windows example
+const SERIAL_PORT = 'COM8';   // Windows example
 // const SERIAL_PORT = '/dev/ttyACM0'; // Linux
 // const SERIAL_PORT = '/dev/cu.usbmodem****'; // macOS
 const BAUD_RATE = 115200;
