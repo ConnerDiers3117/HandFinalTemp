@@ -3,6 +3,10 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 
+// ============================================================================
+// THREE.JS SCENE SETUP
+// ============================================================================
+// Initialize the 3D scene with camera, renderer, and basic controls
 // Scene setup
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x1e1e1e);
@@ -15,6 +19,10 @@ const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
 controls.target.set(0, 1, 0);
 
+// ============================================================================
+// LIGHTING SETUP
+// ============================================================================
+// Add ambient and directional lights to illuminate the 3D scene and grid helper
 // Lighting
 scene.add(new THREE.AmbientLight(0xffffff, 1.4));
 const dirLight = new THREE.DirectionalLight(0xffffff, 1.0);
@@ -25,6 +33,11 @@ dirLight2.position.set(-5, 4, -3);
 scene.add(dirLight2);
 scene.add(new THREE.GridHelper(10, 10));
 
+// ============================================================================
+// FINGER CONFIGURATION
+// ============================================================================
+// Configuration object defining rotation ranges and servo mappings for each finger
+// Each finger maps model rotation degrees to servo angles (0-180 degrees)
 // Finger configuration
 const fingerConfig = {
   thumb:  { modelOpen: 0, modelClosed: 120, servoOpen: 180, servoClosed: 0, axis: 'x', sign: -1 },
@@ -34,11 +47,24 @@ const fingerConfig = {
   pinky:  { modelOpen: 0, modelClosed: 120, servoOpen: 180, servoClosed: 0, axis: 'y', sign: -1 }
 };
 
+// ============================================================================
+// UTILITY FUNCTIONS
+// ============================================================================
+
+// Maps a value from one numeric range to another (linear interpolation)
+// Used to convert between closure values (0-1), model degrees, and servo angles (0-180)
 function mapRange(value, inMin, inMax, outMin, outMax) {
   return outMin + (value - inMin) * (outMax - outMin) / (inMax - inMin);
 }
 
+// ============================================================================
+// STATE MANAGEMENT & REFERENCES
+// ============================================================================
+
+// Current closure state for each finger (0 = open, 1 = fully closed)
 const state = { thumb: 0, index: 0, middle: 0, ring: 0, pinky: 0 };
+
+// Maps finger names to their corresponding 3D model node names in the GLTF scene
 const fingerNodeNames = {
   thumb: 'Contr_Fin_Tumb_03_01',
   index: 'Fin_Index_03_01',
@@ -46,10 +72,22 @@ const fingerNodeNames = {
   ring: 'Fin_Ring_03_06',
   pinky: 'Fig_Pinky_03_06'
 };
+
+// Stores references to the loaded 3D finger node objects from the model
 const fingerNodes = { thumb: null, index: null, middle: null, ring: null, pinky: null };
+
+// The loaded 3D hand model (GLTF scene object)
 let handModel = null;
+
+// Stores references to UI slider elements for direct DOM manipulation
 const sliderRefs = {};
 
+// ============================================================================
+// 3D MODEL MANIPULATION FUNCTIONS
+// ============================================================================
+
+// Applies rotation to a finger node based on closure value (0-1)
+// Interpolates between modelOpen and modelClosed degrees, then converts to radians
 function applyFingerRotation(fingerName, closure) {
   const node = fingerNodes[fingerName];
   if (!node) return;
@@ -58,6 +96,7 @@ function applyFingerRotation(fingerName, closure) {
   node.rotation[cfg.axis] = cfg.sign * THREE.MathUtils.degToRad(modelDeg);
 }
 
+// Updates all finger rotations in the 3D model based on current state values
 function updateModelFromState() {
   applyFingerRotation('thumb', state.thumb);
   applyFingerRotation('index', state.index);
@@ -66,6 +105,12 @@ function updateModelFromState() {
   applyFingerRotation('pinky', state.pinky);
 }
 
+// ============================================================================
+// SERVO & STATE CONTROL FUNCTIONS
+// ============================================================================
+
+// Sends current finger angles to the backend server via HTTP POST request
+// Converts closure values (0-1) to servo angles (0-180 degrees)
 async function sendToServos() {
   const angles = {};
   for (const [finger, closure] of Object.entries(state)) {
@@ -84,6 +129,7 @@ async function sendToServos() {
   }
 }
 
+// Updates a single finger's closure value and syncs changes to both UI and servos
 function setFingerValue(key, closure) {
   state[key] = Math.min(1, Math.max(0, closure));
   if (sliderRefs[key]) {
@@ -94,11 +140,16 @@ function setFingerValue(key, closure) {
   sendToServos();
 }
 
+// Synchronizes all fingers to the same closure value
 function syncAllFromMaster(masterClosure) {
   for (const finger of Object.keys(state)) {
     setFingerValue(finger, masterClosure);
   }
 }
+
+// ============================================================================
+// THROTTLE UTILITY
+// ============================================================================
 
 // Throttle function to limit how often syncAllFromMaster is called
 function throttle(func, limit) {
@@ -112,10 +163,15 @@ function throttle(func, limit) {
   };
 }
 
-// Create throttled version (max once per 100ms)
+// Create throttled version (max once per 100ms) to prevent flooding the servo with updates
 const throttledSync = throttle(syncAllFromMaster, 100);
 
+// ============================================================================
+// UI BUILDER FUNCTIONS
+// ============================================================================
+
 // Build UI (same as before)
+// Creates a slider UI row with label, range input, and value display
 function createSliderRow(label, key) {
   const row = document.createElement('div');
   row.className = 'slider-row';
@@ -138,6 +194,7 @@ function createSliderRow(label, key) {
   return row;
 }
 
+// Builds the complete control panel UI with flex sensor slider, individual finger sliders, and preset buttons
 function buildUI() {
   const panel = document.createElement('div');
   panel.id = 'control-panel';
@@ -180,6 +237,9 @@ function buildUI() {
 }
 buildUI();
 
+// ============================================================================
+// 3D MODEL LOADING
+// ============================================================================
 // Load 3D model
 const loader = new GLTFLoader();
 loader.load('/models/robot_hand/scene.gltf', (gltf) => {
@@ -202,8 +262,15 @@ loader.load('/models/robot_hand/scene.gltf', (gltf) => {
   console.log('Model loaded');
 });
 
+// ============================================================================
+// FLEX SENSOR POLLING
+// ============================================================================
 // Flex sensor polling (every 200ms, throttled updates)
+// Tracks last flex value to avoid updating UI on negligible changes
 let lastFlex = 0;
+
+// Polls the backend for flex sensor data and updates hand model accordingly
+// Only updates when change is greater than 1% to avoid excessive updates
 async function pollFlex() {
   try {
     const res = await fetch('http://localhost:3000/flex');
@@ -225,13 +292,19 @@ async function pollFlex() {
 }
 setTimeout(pollFlex, 1000);
 
+// ============================================================================
+// MAIN ANIMATION LOOP
+// ============================================================================
 // Animation loop
+// Continuously renders the 3D scene and updates orbit controls
 function animate() {
   requestAnimationFrame(animate);
   controls.update();
   renderer.render(scene, camera);
 }
 animate();
+
+// Handles window resize events to maintain aspect ratio and renderer size
 window.addEventListener('resize', () => {
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
